@@ -20,6 +20,20 @@ Every argument is a path to a shared objet.
 Providers are executed sequentially before all tests.
 Individual test objects are run in parallel, and the tests inside each object are run sequentially.
 
+### With Make
+You can build ccheck with a make rule
+```make
+ccheck/ccheck ccheck/integer-provider.so ccheck/interface.h:
+	if [ ! -d ccheck ]; then git clone https://github.com/loglob/ccheck; fi
+	make -C ccheck
+```
+Then invoke the tests with a rule like
+```
+.PHONY: test --
+test: ccheck/ccheck out/my-lib.so -- ccheck/integer-prodiver.so $(MY_PROVIDERS) $(MY_TESTS)
+	./$^
+```
+
 ## Writing Tests
 All tests must include `interface.h`, which provides the `TEST()` macro.
 This macro is used to mark a function definition as a unit test, like this:
