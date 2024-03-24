@@ -10,6 +10,8 @@
 #include <pthread.h>
 #include <setjmp.h>
 #include <stdarg.h>
+#include <signal.h>
+#include <errno.h>
 #include "interface.h"
 
 #define RED_BOLD(msg) "\x1B[31;1m" msg "\x1B[0m"
@@ -174,6 +176,16 @@ bool nextCombination(size_t n, const size_t ms[static n], size_t result[static n
 const void *locateArg(struct ProviderBucket *bucket, size_t providerIndex, size_t dataPosition)
 {
 	return bucket->providers[providerIndex].data  +  bucket->elementSize * dataPosition;
+}
+
+/** Invoked when a SIGSEGV signal is caught. */
+void handleSignal(int signo)
+{
+	if(signo != SIGSEGV)
+		fprintf(stderr, "Warning: handleSignal() called for non-SIGSEGV signal %u!\n", signo);
+
+	snprintf(runningTest.message, sizeof(runningTest.message), "Caught a SIGSEGV segmentation violation");
+	longjmp(runningTest.failTarget, 1);
 }
 
 /**
@@ -696,6 +708,14 @@ int main(int argc, char **argv)
 	}
 
 	printf("Loaded %zu %s and %zu %s.\n", CONJUGATE(subjectCount, "subject"), CONJUGATE(provCount, "provider"));
+
+	struct sigaction sa = {
+		.sa_mask = SA_NODEFER,
+		.sa_handler = handleSignal
+	};
+	
+	if(sigaction(SIGSEGV, &sa, NULL))
+		fprintf(stderr, YELLOW("Segfaults will not be caught due to sigaction() error: %s\n"), strerror(errno));
 
 	for(size_t i = 0; i < dlCount; ++i)
 	{
