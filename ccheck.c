@@ -574,13 +574,26 @@ bool loadDL(void *handle, const char *name)
 			case DT_GNU_HASH:
 			{
 				// GNU_HASH layout described here: https://flapenguin.me/elf-dt-gnu-hash
-				const Elf32_Word *ht = (Elf32_Word*)d->d_un.d_ptr;
-				size_t nb = ht[0], symOff = ht[1];
+				const uint32_t *ht = (uint32_t*)d->d_un.d_ptr;
+				uint32_t nb = ht[0], symOff = ht[1], bloomSize = ht[2];
 
+				const ElfW(Addr) *bloom = (void*)(ht + 4);
+
+				// check if bloom filter is populated, otherwise buckets and chains are invalid & lead to segfault
+				for(uint32_t i = 0; i < bloomSize; ++i)
+				{
+					// technically, non-0 bloom values don't have to be populated
+					if(bloom[i])
+						goto bloom_ok;
+				}
+
+				dl.symbolCount = 1;
+				break;
+
+				bloom_ok:;
 				// maximum symbol table index
 				size_t maxInd = symOff;
-
-				const Elf32_Word *buckets = ht + 4 + (sizeof(ElfW(Addr))/4)*ht[2];
+				const uint32_t *buckets = (uint32_t*)(bloom + bloomSize);
 
 				for(size_t i = 0; i < nb; ++i)
 				{
@@ -590,7 +603,7 @@ bool loadDL(void *handle, const char *name)
 						maxInd = b;
 				}
 
-				const Elf32_Word *chain = buckets + nb;
+				const uint32_t *chain = buckets + nb;
 
 				// walk chain to the end
 				while((chain[maxInd - symOff] & 1) == 0)
@@ -601,7 +614,7 @@ bool loadDL(void *handle, const char *name)
 			break;
 
 			case DT_HASH:
-				dl.symbolCount = 1[ (Elf32_Word*)d->d_un.d_ptr ];
+				dl.symbolCount = 1[ (uint32_t*)d->d_un.d_ptr ];
 			break;
 
 			case DT_SYMENT:
