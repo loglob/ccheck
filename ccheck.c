@@ -111,6 +111,8 @@ const size_t FALLBACK_VARIANT_COUNT = 50;
 
 /** Information on the currently running test */
 __thread struct {
+	/** Whether `failTarget` is currently in a valid state */
+	bool jumpReady;
 	/** a longjmp() target to continue at on test failure */
 	jmp_buf failTarget;
 	/** Stores a custom message to display in addition to the failed test's invocation */
@@ -183,7 +185,13 @@ void handleSignal(int signo)
 {
 	if(signo != SIGSEGV)
 		fprintf(stderr, "Warning: handleSignal() called for non-SIGSEGV signal %u!\n", signo);
+	if(! runningTest.jumpReady)
+	{
+		fprintf(stderr, RED_BOLD("Got a segfault from an unexpected context, aborting run!\n"));
+		exit(EXIT_FAILURE);
+	}
 
+	runningTest.jumpReady = false;
 	snprintf(runningTest.message, sizeof(runningTest.message), "Caught a SIGSEGV segmentation violation");
 	longjmp(runningTest.failTarget, 1);
 }
@@ -280,6 +288,8 @@ void runSingleTest(struct DL *dl, const char *testName, void (*const func)(), un
 			#define arg(i) locateArg(typeBuckets[argTypeIndices[i]], curProviders[argTypeIndices[i]], curDataIndices[i])
 			++dl->variants;
 
+			runningTest.jumpReady = true;
+
 			switch(arity)
 			{
 				case MAX_ARITY:
@@ -321,6 +331,8 @@ void runSingleTest(struct DL *dl, const char *testName, void (*const func)(), un
 				default:
 					__builtin_unreachable();
 			}
+
+			runningTest.jumpReady = false;
 
 			#undef arg
 		} while(nextCombination(arity, curDataCounts, curDataIndices));
@@ -582,7 +594,6 @@ bool loadDL(void *handle, const char *name)
 				// check if bloom filter is populated, otherwise buckets and chains are invalid & lead to segfault
 				for(uint32_t i = 0; i < bloomSize; ++i)
 				{
-					// technically, non-0 bloom values don't have to be populated
 					if(bloom[i])
 						goto bloom_ok;
 				}
@@ -723,7 +734,7 @@ int main(int argc, char **argv)
 	printf("Loaded %zu %s and %zu %s.\n", CONJUGATE(subjectCount, "subject"), CONJUGATE(provCount, "provider"));
 
 	struct sigaction sa = {
-		.sa_mask = SA_NODEFER,
+		.sa_mask = {SA_NODEFER},
 		.sa_handler = handleSignal
 	};
 	
