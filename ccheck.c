@@ -461,17 +461,32 @@ bool loadOneProvider(struct DL *dl, const char *sizeof_provider_name, size_t siz
 	}
 
 	chkDlsym(format_f, fmt, nameBuf);
+	void *buf = NULL;
 
+	if(setjmp(runningTest.failTarget))
+	{
+		fprintf(stderr, RED("Failed to run provider %s::%s: %s\n"), dl->name, name, runningTest.message);
+
+		if(buf)
+			free(buf);
+
+		return false;
+	}
+
+	runningTest.jumpReady = true;
 	size_t n = prov(0, NULL);
+	runningTest.jumpReady = false;
 
 	if(n == 0)
 		n = FALLBACK_VARIANT_COUNT;
 
 	#define checkMalloc(ptr, ...) if(ptr == NULL) { fprintf(stderr, "Failed to load provider %s::%s: Malloc failure\n", dl->name, name); __VA_ARGS__; return false; }
-	void *buf = malloc(n * size);
+	buf = malloc(n * size);
 	checkMalloc(buf)
 
+	runningTest.jumpReady = true;
 	size_t m = prov(n, buf);
+	runningTest.jumpReady = false;
 
 	if(m > n)
 	{
@@ -696,6 +711,14 @@ int main(int argc, char **argv)
 
 	srand(clock());
 
+	struct sigaction sa = {
+		.sa_mask = {SA_NODEFER},
+		.sa_handler = handleSignal
+	};
+	
+	if(sigaction(SIGSEGV, &sa, NULL))
+		fprintf(stderr, YELLOW("Segfaults will not be caught due to sigaction() error: %s\n"), strerror(errno));
+
 	// load DLs and providers
 	for(int i = 1; i < argc; ++i)
 	{
@@ -732,14 +755,6 @@ int main(int argc, char **argv)
 	}
 
 	printf("Loaded %zu %s and %zu %s.\n", CONJUGATE(subjectCount, "subject"), CONJUGATE(provCount, "provider"));
-
-	struct sigaction sa = {
-		.sa_mask = {SA_NODEFER},
-		.sa_handler = handleSignal
-	};
-	
-	if(sigaction(SIGSEGV, &sa, NULL))
-		fprintf(stderr, YELLOW("Segfaults will not be caught due to sigaction() error: %s\n"), strerror(errno));
 
 	for(size_t i = 0; i < dlCount; ++i)
 	{
