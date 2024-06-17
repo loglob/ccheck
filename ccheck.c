@@ -742,10 +742,10 @@ int main(int argc, char **argv)
 
 	srand(clock());
 
-	struct sigaction sa = {
-		.sa_mask = {SA_NODEFER},
-		.sa_handler = handleSignal
-	};
+	struct sigaction sa = {};
+	sa.sa_handler = handleSignal;
+	sigemptyset(&sa.sa_mask);
+	sigaddset(&sa.sa_mask, SA_NODEFER);
 	
 	if(sigaction(SIGSEGV, &sa, NULL))
 		fprintf(stderr, YELLOW("Segfaults will not be caught due to sigaction() error: %s\n"), strerror(errno));
