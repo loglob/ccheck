@@ -15,7 +15,8 @@ These are compiled as normal shared objects, where one object may contain any nu
 ```
 ccheck [subjects...] -- [providers/tests...]
 ```
-Every argument is a path to a shared objet.
+Every argument names a shared object.
+Unless a path explicitly contains `/`, it is searched on the standard system include path.
 
 Providers are executed sequentially before all tests.
 Individual test objects are run in parallel, and the tests inside each object are run sequentially.
@@ -48,6 +49,8 @@ For convenience, `assertTrue()` is macro for `testFailure()` that ensures its ar
 
 When the function returns without calling `testFailure()` the test run is considered successful.
 
+Calls to `exit()` and `assert()` failures in test code are also caught and considered failures.
+The exit syscall itself cannot be caught so it *may* cause false positives in very specific situations.
 
 ## Writing Providers
 Providers must include `interface.h`, which provides the `PROVIDER()` macro.

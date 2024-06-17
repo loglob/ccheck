@@ -136,6 +136,35 @@ void testFailure(const char *fmt, ...)
 	longjmp(runningTest.failTarget, 1);
 }
 
+// These functions overwrite stdlib symbols.
+// This works only because we build with `-rdynamic` to force these symbols into `dlopen()`d objects
+
+/** Catch stdlib exit() in test code, but not exit syscalls directly */
+void exit(int status)
+{	
+	if(! runningTest.jumpReady)
+	{
+		fprintf(stderr, RED_BOLD("Got an exit(%d) from an unexpected context, aborting run!\n"), status);
+		// _exit uses a syscall directly to avoid this hook
+		_exit(EXIT_FAILURE);
+	}
+
+	testFailure("Test code attempted to call exit(%d)", status);
+}
+
+/** Catch assertion fails in test code */
+void __assert_fail(const char *assertion, const char *file, unsigned int line, const char *func)
+{
+	if(! runningTest.jumpReady)
+	{
+		fprintf(stderr, RED_BOLD("Got an assertion failure from an unexpected context in %s() at %s:%u\n"), func, file, line);
+		// _exit uses a syscall directly to avoid the exit hook
+		_exit(EXIT_FAILURE);
+	}
+
+	testFailure("Test code failed assertion in %s() at %s:%u: Expected `%s` to be true", func, file, line, assertion);
+}
+
 /** Locates a provider for the given type name */
 struct ProviderBucket *findProvider(const char *type)
 {
@@ -188,7 +217,8 @@ void handleSignal(int signo)
 	if(! runningTest.jumpReady)
 	{
 		fprintf(stderr, RED_BOLD("Got a segfault from an unexpected context, aborting run!\n"));
-		exit(EXIT_FAILURE);
+		// _exit uses a syscall directly to avoid our exit() hook
+		_exit(EXIT_FAILURE);
 	}
 
 	runningTest.jumpReady = false;
@@ -239,6 +269,7 @@ void runSingleTest(struct DL *dl, const char *testName, void (*const func)(), un
 
 	if(setjmp(runningTest.failTarget))
 	{
+		runningTest.jumpReady = false;
 		++dl->failed;
 
 		const size_t cap = 2048;
