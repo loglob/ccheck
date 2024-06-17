@@ -30,6 +30,22 @@ PROVIDER(int64_t, randomizedI64)
 	return N; \
  }
 
+void xGetRandom(size_t n, void *buffer)
+{
+	ssize_t r = getrandom(buffer, n, 0);
+
+	if(r < 0)
+	{
+		perror("getrandom");
+		exit(EXIT_FAILURE);
+	}
+	else if(r != (ssize_t)n)
+	{
+		fprintf(stderr, "getrandom failed to produce enough output");
+		exit(EXIT_FAILURE);
+	}
+}
+
 size_t fixedU16(size_t cap, uint16_t data[restrict static cap])
 FIXED_UNSIGNED
 
@@ -57,7 +73,7 @@ FIXED_SIGNED
 
 
 #define RANDOM_UNSIGNED(mask) { \
-	getrandom(data, sizeof(*data) * cap, 0); \
+	xGetRandom(sizeof(*data) * cap, data); \
 	for(size_t i = 0; i < cap; ++i) data[i] &= mask; \
 	return cap; \
 }
@@ -73,7 +89,7 @@ RANDOM_UNSIGNED(0xFFFFFFFFFFFFL)
 
 
 #define RANDOM_SIGNED(mask, sign) { \
-	getrandom(data, sizeof(*data) * cap, 0); \
+	xGetRandom(sizeof(*data) * cap, data); \
 	for(size_t i = 0; i < cap; ++i) \
 	{ \
 		bool neg = data[i] & (sign); \
