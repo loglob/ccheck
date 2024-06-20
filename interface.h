@@ -97,7 +97,7 @@ typedef size_t (*format_f)(char*, size_t, const void*);
 	const char _SIG_TEST_##func[] = JOIN(__VA_ARGS__); \
 	static inline void func PAIR(__VA_ARGS__); \
 	void _TEST_##func PTR_ARGS(__VA_ARGS__) \
-	{ return func INVOKE_PTR_ARGS(__VA_ARGS__); } \
+	{ func INVOKE_PTR_ARGS(__VA_ARGS__); } \
 	void func PAIR(__VA_ARGS__)
 
 /**

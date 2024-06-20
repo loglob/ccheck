@@ -99,6 +99,8 @@ struct DL
 	size_t failed;
 };
 
+typedef void (*const test_f)();
+
 struct ProviderBucket *providerRoot = NULL;
 size_t dlCount = 0;
 struct DL *dls;
@@ -117,7 +119,7 @@ __thread struct {
 	jmp_buf failTarget;
 	/** Stores a custom message to display in addition to the failed test's invocation */
 	char message[TEST_MESSAGE_SIZE];
-} runningTest = {};
+} runningTest = {0};
 
 
 void testFailure(const char *fmt, ...)
@@ -206,7 +208,7 @@ bool nextCombination(size_t n, const size_t ms[static n], size_t result[static n
 */
 const void *locateArg(struct ProviderBucket *bucket, size_t providerIndex, size_t dataPosition)
 {
-	return bucket->providers[providerIndex].data  +  bucket->elementSize * dataPosition;
+	return (void*)((size_t)bucket->providers[providerIndex].data  +  bucket->elementSize * dataPosition);
 }
 
 /** Invoked when a SIGSEGV signal is caught. */
@@ -234,7 +236,7 @@ void handleSignal(int signo)
 	@param argTypeIndices [0 ; arity) -> [0 ; typeCount)
 	@param argNames [0 ; arity) -> argument names
  */
-void runSingleTest(struct DL *dl, const char *testName, void (*const func)(), unsigned int arity, unsigned int typeCount,
+void runSingleTest(struct DL *dl, const char *testName, test_f func, unsigned int arity, unsigned int typeCount,
 	const char *restrict const argTypes[restrict static typeCount], const int argTypeIndices [restrict static arity], const char *restrict const argNames[restrict static arity])
 {
 	/** The buckets corresponding to the argument types */
@@ -397,7 +399,7 @@ void runTests(struct DL *dl)
 		if(strncmp(name, "_SIG_TEST_", 10) != 0)
 			continue;
 
-		bool (*func)() = dlsym(dl->handle, name + 4);
+		test_f func = (test_f)(size_t)dlsym(dl->handle, name + 4);
 
 		if(func == NULL) {
 			fprintf(stderr, RED_BOLD("Couldn't run test") " %s::%s: Missing testing function: dlsym(): %s\n", dl->name, name, dlerror()); // dlerror in pthread, cringe
@@ -441,7 +443,7 @@ void runTests(struct DL *dl)
 				argTypes[typeCount++] = type;
 		}
 
-		runSingleTest(dl, testName, dlsym(dl->handle, name + 4), arity, typeCount, argTypes, argTypeIndices, argNames);
+		runSingleTest(dl, testName, func, arity, typeCount, argTypes, argTypeIndices, argNames);
 
 		skip_symbol:;
 	}
@@ -475,7 +477,7 @@ bool loadOneProvider(struct DL *dl, const char *sizeof_provider_name, size_t siz
 {
 	const char *name = sizeof_provider_name + 17; // cur off _SIZEOF_PROVIDER_
 
-	#define chkDlsym(type, varname, symbol) type varname = dlsym(dl->handle, symbol); \
+	#define chkDlsym(type, varname, symbol) type varname = (type)(size_t)dlsym(dl->handle, symbol); \
 		if(varname == NULL) { fprintf(stderr, "Failed to load provider %s::%s: Missing symbol '%s': %s\n", dl->name, name, symbol, dlerror()); return false; }
 
 	chkDlsym(const char*, type, sizeof_provider_name + 7) // cut off _SIZEOF
@@ -742,7 +744,7 @@ int main(int argc, char **argv)
 
 	srand(clock());
 
-	struct sigaction sa = {};
+	struct sigaction sa = {0};
 	sa.sa_handler = handleSignal;
 	sigemptyset(&sa.sa_mask);
 	sigaddset(&sa.sa_mask, SA_NODEFER);
