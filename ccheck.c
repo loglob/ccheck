@@ -215,17 +215,18 @@ const void *locateArg(struct ProviderBucket *bucket, size_t providerIndex, size_
 /** Invoked when a SIGSEGV signal is caught. */
 void handleSignal(int signo)
 {
-	if(signo != SIGSEGV)
-		fprintf(stderr, "Warning: handleSignal() called for non-SIGSEGV signal %u!\n", signo);
+	if(signo != SIGSEGV && signo != SIGFPE)
+		fprintf(stderr, "Warning: handleSignal() called for unintended signal number %u!\n", signo);
 	if(! runningTest.jumpReady)
 	{
-		fprintf(stderr, RED_BOLD("Got a segfault from an unexpected context, aborting run!\n"));
+		fprintf(stderr, RED_BOLD("Got a signal from an unexpected context, aborting run!\n"));
 		// _exit uses a syscall directly to avoid our exit() hook
 		_exit(EXIT_FAILURE);
 	}
 
 	runningTest.jumpReady = false;
-	snprintf(runningTest.message, sizeof(runningTest.message), "Caught a SIGSEGV segmentation violation");
+	snprintf(runningTest.message, sizeof(runningTest.message), 
+		signo == SIGSEGV ? "Caught a SIGSEGV segmentation violation" : "Caught a SIGFPE floating point violation");
 	longjmp(runningTest.failTarget, 1);
 }
 
@@ -753,6 +754,8 @@ int main(int argc, char **argv)
 	
 	if(sigaction(SIGSEGV, &sa, NULL))
 		fprintf(stderr, YELLOW("Segfaults will not be caught due to sigaction() error: %s\n"), strerror(errno));
+	if(sigaction(SIGFPE, &sa, NULL))
+		fprintf(stderr, YELLOW("Floating-point exceptions will not be caught due to sigaction() error: %s\n"), strerror(errno));
 
 	// load DLs and providers
 	for(int i = 1; i < argc; ++i)
