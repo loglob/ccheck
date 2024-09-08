@@ -101,6 +101,7 @@ struct DL
 
 typedef void (*const test_f)();
 
+bool linkerErrors = false;
 struct ProviderBucket *providerRoot = NULL;
 size_t dlCount = 0;
 struct DL *dls;
@@ -478,7 +479,7 @@ bool loadOneProvider(struct DL *dl, const char *sizeof_provider_name, size_t siz
 	const char *name = sizeof_provider_name + 17; // cur off _SIZEOF_PROVIDER_
 
 	#define chkDlsym(type, varname, symbol) type varname = (type)(size_t)dlsym(dl->handle, symbol); \
-		if(varname == NULL) { fprintf(stderr, "Failed to load provider %s::%s: Missing symbol '%s': %s\n", dl->name, name, symbol, dlerror()); return false; }
+		if(varname == NULL) { fprintf(stderr, YELLOW("Failed to load provider %s::%s: Missing symbol '%s': %s\n"), dl->name, name, symbol, dlerror()); return false; }
 
 	chkDlsym(const char*, type, sizeof_provider_name + 7) // cut off _SIZEOF
 	chkDlsym(provider_f, prov, name) // cut off _SIZEOF
@@ -513,7 +514,7 @@ bool loadOneProvider(struct DL *dl, const char *sizeof_provider_name, size_t siz
 	if(n == 0)
 		n = FALLBACK_VARIANT_COUNT;
 
-	#define checkMalloc(ptr, ...) if(ptr == NULL) { fprintf(stderr, "Failed to load provider %s::%s: Malloc failure\n", dl->name, name); __VA_ARGS__; return false; }
+	#define checkMalloc(ptr, ...) if(ptr == NULL) { fprintf(stderr, YELLOW("Failed to load provider %s::%s: Malloc failure\n"), dl->name, name); __VA_ARGS__; return false; }
 	buf = malloc(n * size);
 	checkMalloc(buf)
 
@@ -523,7 +524,7 @@ bool loadOneProvider(struct DL *dl, const char *sizeof_provider_name, size_t siz
 
 	if(m > n)
 	{
-		fprintf(stderr, "Failed to load provider %s::%s: Unexpected size return\n", dl->name, name);
+		fprintf(stderr, YELLOW("Failed to load provider %s::%s: Unexpected size return (got %zu when at most %zu was expected)\n"), dl->name, name, m, n);
 		free(buf);
 		return false;
 	}
@@ -555,7 +556,7 @@ bool loadOneProvider(struct DL *dl, const char *sizeof_provider_name, size_t siz
 	}
 	else if(b->elementSize != size)
 	{
-		fprintf(stderr, "Failed to load provider '%s': Size mismatch between other %s providers\n", name, type);
+		fprintf(stderr, YELLOW("Failed to load provider '%s': Size mismatch between other %s providers\n"), name, type);
 		free(buf);
 		return false;
 	}
@@ -595,7 +596,10 @@ size_t loadProviders(struct DL *dl)
 		if(strncmp(name, "_SIZEOF_PROVIDER_", 17) != 0)
 			continue;
 
-		count += loadOneProvider(dl, name, *(const size_t*)(dl->elfOffset + s.st_value));
+		if(loadOneProvider(dl, name, *(const size_t*)(dl->elfOffset + s.st_value)))
+			++count;
+		else
+			linkerErrors = true;
 	}
 
 	dl->provider = count > 0;
@@ -722,8 +726,6 @@ bool loadDL(void *handle, const char *name)
 
 int main(int argc, char **argv)
 {
-	bool linkerErrors = false;
-
 	if(argc == 0)
 	{
 		fprintf(stderr,
