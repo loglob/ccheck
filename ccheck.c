@@ -215,8 +215,6 @@ const void *locateArg(struct ProviderBucket *bucket, size_t providerIndex, size_
 /** Invoked when a SIGSEGV signal is caught. */
 void handleSignal(int signo)
 {
-	if(signo != SIGSEGV && signo != SIGFPE)
-		fprintf(stderr, "Warning: handleSignal() called for unintended signal number %u!\n", signo);
 	if(! runningTest.jumpReady)
 	{
 		fprintf(stderr, RED_BOLD("Got a signal from an unexpected context, aborting run!\n"));
@@ -225,8 +223,7 @@ void handleSignal(int signo)
 	}
 
 	runningTest.jumpReady = false;
-	snprintf(runningTest.message, sizeof(runningTest.message), 
-		signo == SIGSEGV ? "Caught a SIGSEGV segmentation violation" : "Caught a SIGFPE floating point violation");
+	snprintf(runningTest.message, sizeof(runningTest.message), "Caught SIG%s %s", sigabbrev_np(signo), strsignal(signo));
 	longjmp(runningTest.failTarget, 1);
 }
 
@@ -751,11 +748,20 @@ int main(int argc, char **argv)
 	sa.sa_handler = handleSignal;
 	sigemptyset(&sa.sa_mask);
 	sigaddset(&sa.sa_mask, SA_NODEFER);
-	
-	if(sigaction(SIGSEGV, &sa, NULL))
-		fprintf(stderr, YELLOW("Segfaults will not be caught due to sigaction() error: %s\n"), strerror(errno));
-	if(sigaction(SIGFPE, &sa, NULL))
-		fprintf(stderr, YELLOW("Floating-point exceptions will not be caught due to sigaction() error: %s\n"), strerror(errno));
+	#define SIGACTION(no, desc) do { \
+		if(sigaction(no, &sa, NULL)) \
+			fprintf(stderr, YELLOW("%s will not be caught due to sigaction() error: %s\n"), desc, strerror(errno)); \
+	} while(0)
+
+	SIGACTION(SIGSEGV, "Segfaults");
+	SIGACTION(SIGFPE, "Floating-point exceptions");
+	SIGACTION(SIGABRT, "Calls to abort()");
+	SIGACTION(SIGBUS, "Bus errors");
+	SIGACTION(SIGILL, "Illegal instructions");
+	SIGACTION(SIGSYS, "Invalid syscalls");
+	SIGACTION(SIGTRAP, "Traps");
+
+	#undef SIGACTION
 
 	// load DLs and providers
 	for(int i = 1; i < argc; ++i)
