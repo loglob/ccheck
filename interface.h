@@ -109,3 +109,16 @@ extern void testFailure(const char *fmt, ...);
 
 #define assertTrueF(expr, fmt, ...) do { if( ! (expr)) testFailure("Assertion failure: Expected `%s` to be true" fmt, #expr ,##__VA_ARGS__); } while(0)
 #define assertTrue(expr) assertTrueF(expr,)
+
+/** Stops the current test and reports it as successful */
+__attribute__((noreturn))
+extern void testSuccess();
+
+/** Considers exit() calls with any of the listed exit codes as successful.
+	@note This call fails if another acceptExit() mask is already active.
+		You must use `undoExpectExit` first to clear the old mask.
+ */
+extern void expectExit(unsigned count, const int codes[static count]);
+
+/** Undoes a previous `acceptExit()`. */
+extern void undoExpectExit();

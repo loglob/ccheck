@@ -116,10 +116,18 @@ const size_t FALLBACK_VARIANT_COUNT = 50;
 __thread struct {
 	/** Whether `failTarget` is currently in a valid state */
 	bool jumpReady;
+	/** Whether `successTarget` is currently in a valid state */
+	bool successJumpReady;
 	/** a longjmp() target to continue at on test failure */
 	jmp_buf failTarget;
+	/** a longjmp() target to continue at on test success */
+	jmp_buf successTarget;
 	/** Stores a custom message to display in addition to the failed test's invocation */
 	char message[TEST_MESSAGE_SIZE];
+	/** size of `exitMask` */
+	unsigned exitMaskSize;
+	/** malloc()ed pointer to a list of exit codes */
+	int *exitMask;
 } runningTest = {0};
 
 
@@ -139,6 +147,53 @@ void testFailure(const char *fmt, ...)
 	longjmp(runningTest.failTarget, 1);
 }
 
+void testSuccess()
+{
+	if(! runningTest.successJumpReady)
+	{
+		fprintf(stderr, RED_BOLD("testSuccess() called from an unexpected context, aborting run!\n"));
+		_exit(EXIT_FAILURE);
+	}
+
+	longjmp(runningTest.successTarget, 1);
+}
+
+void expectExit(unsigned count, const int codes[static count])
+{
+	if(!runningTest.jumpReady || !runningTest.successJumpReady)
+	{
+		fprintf(stderr, RED_BOLD("expectExit() called from an unexpected context, aborting run!\n"));
+		_exit(EXIT_FAILURE);
+	}
+	if(runningTest.exitMaskSize)
+		testFailure("Test code made duplicate expectExit() call");
+
+	int *copy = malloc(count * sizeof(int));
+
+	if(! copy)
+		testFailure("expectExit(): malloc(): %s", strerror(errno));
+
+	memcpy(copy, codes, count * sizeof(int));
+
+	runningTest.exitMaskSize = count;
+	runningTest.exitMask = copy;
+}
+
+void undoExpectExit()
+{
+	if(!runningTest.jumpReady || !runningTest.successJumpReady)
+	{
+		fprintf(stderr, RED_BOLD("undoExpectExit() called from an unexpected context, aborting run!\n"));
+		_exit(EXIT_FAILURE);
+	}
+	if(! runningTest.exitMaskSize)
+		testFailure("Test code called undoExpectExit() before expectExit()");
+
+	free(runningTest.exitMask);
+	runningTest.exitMaskSize = 0;
+	runningTest.exitMask = NULL;
+}
+
 // These functions overwrite stdlib symbols.
 // This works only because we build with `-rdynamic` to force these symbols into `dlopen()`d objects
 
@@ -150,6 +205,11 @@ void exit(int status)
 		fprintf(stderr, RED_BOLD("Got an exit(%d) from an unexpected context, aborting run!\n"), status);
 		// _exit uses a syscall directly to avoid this hook
 		_exit(EXIT_FAILURE);
+	}
+	if(runningTest.successJumpReady) for(unsigned i = 0; i < runningTest.exitMaskSize; ++i)
+	{
+		if(status == runningTest.exitMask[i])
+			testSuccess();
 	}
 
 	testFailure("Test code attempted to call exit(%d)", status);
@@ -320,7 +380,14 @@ void runSingleTest(struct DL *dl, const char *testName, test_f func, unsigned in
 			#define arg(i) locateArg(typeBuckets[argTypeIndices[i]], curProviders[argTypeIndices[i]], curDataIndices[i])
 			++dl->variants;
 
+			runningTest.exitMaskSize = 0;
+			runningTest.exitMask = NULL;
+
+			if(setjmp(runningTest.successTarget))
+				goto on_success;
+
 			runningTest.jumpReady = true;
+			runningTest.successJumpReady = true;
 
 			switch(arity)
 			{
@@ -364,7 +431,10 @@ void runSingleTest(struct DL *dl, const char *testName, test_f func, unsigned in
 					__builtin_unreachable();
 			}
 
+			on_success:
+			free(runningTest.exitMask);
 			runningTest.jumpReady = false;
+			runningTest.successJumpReady = false;
 
 			#undef arg
 		} while(nextCombination(arity, curDataCounts, curDataIndices));
