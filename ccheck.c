@@ -158,6 +158,11 @@ void testSuccess()
 	longjmp(runningTest.successTarget, 1);
 }
 
+static int _cmp_int(const void *_l, const void *_r)
+{
+	return *(const int*)_r - *(const int*)_l;
+}
+
 void expectExit(unsigned count, const int codes[static count])
 {
 	if(!runningTest.jumpReady || !runningTest.successJumpReady)
@@ -167,6 +172,8 @@ void expectExit(unsigned count, const int codes[static count])
 	}
 	if(runningTest.exitMaskSize)
 		testFailure("Test code made duplicate expectExit() call");
+	if(count == 0)
+		testFailure("expectExit() with empty mask");
 
 	int *copy = malloc(count * sizeof(int));
 
@@ -174,6 +181,7 @@ void expectExit(unsigned count, const int codes[static count])
 		testFailure("expectExit(): malloc(): %s", strerror(errno));
 
 	memcpy(copy, codes, count * sizeof(int));
+	qsort(copy, count, sizeof(int), _cmp_int);
 
 	runningTest.exitMaskSize = count;
 	runningTest.exitMask = copy;
@@ -206,11 +214,8 @@ void exit(int status)
 		// _exit uses a syscall directly to avoid this hook
 		_exit(EXIT_FAILURE);
 	}
-	if(runningTest.successJumpReady) for(unsigned i = 0; i < runningTest.exitMaskSize; ++i)
-	{
-		if(status == runningTest.exitMask[i])
-			testSuccess();
-	}
+	if(runningTest.successJumpReady && bsearch(&status, runningTest.exitMask, runningTest.exitMaskSize, sizeof(int), _cmp_int))
+		testSuccess();
 
 	testFailure("Test code attempted to call exit(%d)", status);
 }
