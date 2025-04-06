@@ -107,8 +107,10 @@ typedef size_t (*format_f)(char*, size_t, const void*);
 __attribute__((noreturn, format(printf, 1, 2)))
 extern void testFailure(const char *fmt, ...);
 
+/** Internal macro that implements `assertTrue()` */
 #define assertTrueF(expr, fmt, ...) do { if( ! (expr)) testFailure("Assertion failure: Expected `%s` to be true" fmt, #expr ,##__VA_ARGS__); } while(0)
-#define assertTrue(expr) assertTrueF(expr,)
+/** Asserts that an expression is truthy. Remaining arguments (optionally) give a printf-format string and corresponding parameters */
+#define assertTrue(expr, ...) assertTrueF(expr, "" __VA_ARGS__)
 
 /** Stops the current test and reports it as successful */
 __attribute__((noreturn))
