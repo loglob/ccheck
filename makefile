@@ -1,4 +1,4 @@
-CFLAGS=-Wall -Wextra -O2 -I. -fPIC -flto
+CFLAGS=-Wall -Wextra -std=c99 -O2 -I. -fPIC -flto
 
 .PHONY: all
 
